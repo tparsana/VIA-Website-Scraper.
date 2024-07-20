@@ -1,84 +1,82 @@
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
-import time
+import csv
 
-# Base URL
-DETAIL_URL_PREFIX = "https://www.vatvaassociation.org/member-details-with-popupbox/?id="
+# Define the base URL and the range of IDs to iterate through
+base_url = "https://www.vatvaassociation.org/member-details-with-popupbox/?id="
+start_id = 1400
+end_id = 1410  # Adjust this range as needed
 
-# Function to get the soup object
-def get_soup(url, params=None):
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    return BeautifulSoup(response.text, 'html.parser')
+# Define the output CSV file
+output_file = "/Users/tanishparsana/Downloads/Projects/VIA-website-scraper/company_data.csv"
 
-# Function to extract member details from the detailed page
-def get_member_details(url):
-    soup = get_soup(url)
-    details = {}
+# Define the schema for the CSV file
+fieldnames = ["Company name", "Member No", "Category", "Year of Established", "Address", "Phone", "Fax", "Email", "Website", "Executive", "Mobile", "Product", "Rawmaterial"]
 
+# Function to fetch and convert the page to text
+def fetch_page_text(url):
     try:
-        # Extract the company name
-        company_name_tag = soup.find('strong')
-        if company_name_tag:
-            details['Company Name'] = company_name_tag.text.strip()
-        else:
-            print(f"Company Name not found for URL: {url}")
+        response = requests.get(url, timeout=10, verify=False)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+        return soup.get_text(separator='\n')
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to fetch data from {url} with error: {e}")
+        return None
 
-        # Extract all paragraphs
-        paragraphs = soup.find_all('p')
-        for paragraph in paragraphs:
-            text = paragraph.get_text()
-            if ':' in text:
-                key, value = text.split(':', 1)
-                details[key.strip()] = value.strip()
+# Function to extract data from the readable text
+def extract_data_from_text(text):
+    data = {key: "" for key in fieldnames}
+    
+    lines = text.split('\n')
+    address_lines = []
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if "Member No:" in line:
+            data["Member No"] = line.split(":", 1)[1].strip()
+        elif "Category:" in line:
+            data["Category"] = line.split(":", 1)[1].strip()
+        elif "Year of Established:" in line:
+            data["Year of Established"] = line.split(":", 1)[1].strip()
+        elif "Address:" in line:
+            address_start = i + 1
+            while address_start < len(lines) and not any(keyword in lines[address_start] for keyword in ["Phone:", "Fax:", "Email:", "Website:", "Executive:", "Mobile:", "Product:", "Rawmaterial:"]):
+                address_lines.append(lines[address_start].strip())
+                address_start += 1
+            data["Address"] = ' '.join(address_lines)
+        elif "Phone:" in line:
+            data["Phone"] = line.split(":", 1)[1].strip()
+        elif "Fax:" in line:
+            data["Fax"] = line.split(":", 1)[1].strip()
+        elif "Email:" in line:
+            data["Email"] = line.split(":", 1)[1].strip()
+        elif "Website:" in line:
+            data["Website"] = line.split(":", 1)[1].strip()
+        elif "Executive:" in line:
+            data["Executive"] = line.split(":", 1)[1].strip()
+        elif "Mobile:" in line:
+            data["Mobile"] = line.split(":", 1)[1].strip()
+        elif "Product:" in line:
+            data["Product"] = line.split(":", 1)[1].strip()
+        elif "Rawmaterial:" in line:
+            data["Rawmaterial"] = line.split(":", 1)[1].strip()
+        elif line and not any(k in line for k in ["Member No:", "Category:", "Year of Established:", "Address:", "Phone:", "Fax:", "Email:", "Website:", "Executive:", "Mobile:", "Product:", "Rawmaterial:"]):
+            data["Company name"] = line.strip()
+    
+    return data
 
-        # Extract product and raw materials (red text)
-        product_raw_material = soup.find_all('span', style="color: #a52a2a;")
-        for span in product_raw_material:
-            text = span.get_text().strip()
-            if 'Product:' in text:
-                details['Product'] = text.split(':', 1)[1].strip()
-            elif 'Rawmaterial:' in text:
-                details['Rawmaterial'] = text.split(':', 1)[1].strip()
+# Open the CSV file for writing
+with open(output_file, mode='w', newline='', encoding='utf-8') as file:
+    writer = csv.DictWriter(file, fieldnames=fieldnames)
+    writer.writeheader()
 
-    except Exception as e:
-        print(f"Error extracting details from {url}: {e}")
+    # Iterate through the range of IDs
+    for company_id in range(start_id, end_id + 1):
+        url = base_url + str(company_id)
+        page_text = fetch_page_text(url)
+        if page_text:
+            data = extract_data_from_text(page_text)
+            writer.writerow(data)
+            print(f"Successfully scraped data for company ID: {company_id}")
 
-    return details
-
-# Function to iterate through a range of IDs and fetch member details
-def collect_member_data(start_id, end_id):
-    detailed_members = []
-    for member_id in range(start_id, end_id + 1):
-        try:
-            details_url = DETAIL_URL_PREFIX + str(member_id)
-            details = get_member_details(details_url)
-            if details:  # Only append if details were found
-                details['ID'] = member_id
-                detailed_members.append(details)
-            time.sleep(1)  # Respectful delay to avoid overloading the server
-        except requests.exceptions.HTTPError as e:
-            print(f"Failed to retrieve data for ID {member_id}: {e}")
-            continue
-    return detailed_members
-
-# Save data to CSV
-def save_to_csv(data, path):
-    df = pd.DataFrame(data)
-    df.to_csv(path, index=False)
-    print(f"Data saved to {path}")
-
-# Main function
-def main(start_id, end_id, save_path):
-    member_data = collect_member_data(start_id, end_id)
-    save_to_csv(member_data, save_path)
-
-# Define the range of IDs and the save path
-start_id = 1300  # Starting ID
-end_id = 1310  # Ending ID (adjust as needed)
-save_path = "/Users/tanishparsana/Downloads/via-web-scraper/members_details.csv"  # Update this path as needed
-
-# Run the main function
-if __name__ == "__main__":
-    main(start_id, end_id, save_path)
+print("Scraping completed.")

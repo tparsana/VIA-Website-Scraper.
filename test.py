@@ -42,8 +42,9 @@ def parse_text(text):
     
     return data
 
-def save_text_to_csv(data, filename):
+def save_text_to_csv(data_list, filename):
     schema = [
+        "Serial Number",
         "Company Name:",
         "Member No:",
         "Category:",
@@ -61,11 +62,22 @@ def save_text_to_csv(data, filename):
     
     with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
-        for field in schema:
-            writer.writerow([field, data[field]])
+        writer.writerow(schema)  # Write header row
+        for data in data_list:
+            writer.writerow([data.get(field, "N/A") for field in schema])
 
 if __name__ == "__main__":
-    url = input("Enter the URL: ")
-    text = extract_text_from_url(url)
-    data = parse_text(text)
-    save_text_to_csv(data, 'output.csv')
+    base_url = "https://www.vatvaassociation.org/member-details-with-popupbox/?id="
+    start_id = int(input("Enter the starting serial number: "))
+    end_id = int(input("Enter the ending serial number: "))
+    
+    all_data = []
+    
+    for company_id in range(start_id, end_id + 1):
+        url = f"{base_url}{company_id}"
+        text = extract_text_from_url(url)
+        data = parse_text(text)
+        data["Serial Number"] = company_id  # Add the serial number to the data
+        all_data.append(data)
+    
+    save_text_to_csv(all_data, 'output.csv')

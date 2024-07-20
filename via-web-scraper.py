@@ -1,84 +1,88 @@
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
-import time
+import csv
+import re
 
-# Base URL
-DETAIL_URL_PREFIX = "https://www.vatvaassociation.org/member-details-with-popupbox/?id="
+def extract_text_from_url(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    return soup.get_text()
 
-# Function to get the soup object
-def get_soup(url, params=None):
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    return BeautifulSoup(response.text, 'html.parser')
-
-# Function to extract member details from the detailed page
-def get_member_details(url):
-    soup = get_soup(url)
-    details = {}
-
-    try:
-        # Extract the company name
-        company_name_tag = soup.find('strong')
-        if company_name_tag:
-            details['Company Name'] = company_name_tag.text.strip()
+def parse_text(text):
+    lines = text.splitlines()
+    first_non_empty_line = next((line.strip() for line in lines if line.strip()), "N/A")
+    
+    data = {}
+    schema = [
+        "Company Name:",
+        "Member No:",
+        "Category:",
+        "Year of Established:",
+        "Address:",
+        "Phone:",
+        "Fax:",
+        "Email:",
+        "Website:",
+        "Executive:",
+        "Mobile:",
+        "Product:",
+        "Rawmaterial:"
+    ]
+    
+    # Set the first non-empty line as the company name
+    data["Company Name:"] = first_non_empty_line
+    
+    for field in schema[1:]:
+        pattern = re.compile(f"\\s*{re.escape(field)}\\s*(.*)")
+        matches = pattern.findall(text)
+        if matches:
+            # Concatenate multiple matches if there are more than one
+            data[field] = ' | '.join(match.strip() for match in matches)
         else:
-            print(f"Company Name not found for URL: {url}")
+            data[field] = "N/A"
+    
+    return data
 
-        # Extract all paragraphs
-        paragraphs = soup.find_all('p')
-        for paragraph in paragraphs:
-            text = paragraph.get_text()
-            if ':' in text:
-                key, value = text.split(':', 1)
-                details[key.strip()] = value.strip()
+def save_text_to_csv(data_list, filename):
+    schema = [
+        "Serial Number",
+        "Company Name:",
+        "Member No:",
+        "Category:",
+        "Year of Established:",
+        "Address:",
+        "Phone:",
+        "Fax:",
+        "Email:",
+        "Website:",
+        "Executive:",
+        "Mobile:",
+        "Product:",
+        "Rawmaterial:"
+    ]
+    
+    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(schema)  # Write header row
+        for data in data_list:
+            writer.writerow([data.get(field, "N/A") for field in schema])
 
-        # Extract product and raw materials (red text)
-        product_raw_material = soup.find_all('span', style="color: #a52a2a;")
-        for span in product_raw_material:
-            text = span.get_text().strip()
-            if 'Product:' in text:
-                details['Product'] = text.split(':', 1)[1].strip()
-            elif 'Rawmaterial:' in text:
-                details['Rawmaterial'] = text.split(':', 1)[1].strip()
-
-    except Exception as e:
-        print(f"Error extracting details from {url}: {e}")
-
-    return details
-
-# Function to iterate through a range of IDs and fetch member details
-def collect_member_data(start_id, end_id):
-    detailed_members = []
-    for member_id in range(start_id, end_id + 1):
-        try:
-            details_url = DETAIL_URL_PREFIX + str(member_id)
-            details = get_member_details(details_url)
-            if details:  # Only append if details were found
-                details['ID'] = member_id
-                detailed_members.append(details)
-            time.sleep(1)  # Respectful delay to avoid overloading the server
-        except requests.exceptions.HTTPError as e:
-            print(f"Failed to retrieve data for ID {member_id}: {e}")
-            continue
-    return detailed_members
-
-# Save data to CSV
-def save_to_csv(data, path):
-    df = pd.DataFrame(data)
-    df.to_csv(path, index=False)
-    print(f"Data saved to {path}")
-
-# Main function
-def main(start_id, end_id, save_path):
-    member_data = collect_member_data(start_id, end_id)
-    save_to_csv(member_data, save_path)
-
-# Define the range of IDs and the save path
-start_id = 1300  # Starting ID
-end_id = 1310  # Ending ID (adjust as needed)
-save_path = "/Users/tanishparsana/Downloads/via-web-scraper/members_details.csv"  # Update this path as needed
-
-# Run the main function
 if __name__ == "__main__":
-    main(start_id, end_id, save_path)
+    base_url = "https://www.vatvaassociation.org/member-details-with-popupbox/?id="
+    start_id = int(input("Enter the starting serial number: "))
+    end_id = int(input("Enter the ending serial number: "))
+    
+    all_data = []
+    
+    for company_id in range(start_id, end_id + 1):
+        url = f"{base_url}{company_id}"
+        text = extract_text_from_url(url)
+        data = parse_text(text)
+        data["Serial Number"] = company_id  # Add the serial number to the data
+        all_data.append(data)
+    
+    save_text_to_csv(all_data, 'output.csv')
+
+## Serial No. Start: 1271
+## Serial No. End: 2530
+## Total Serial Nos.: 1259 Companies

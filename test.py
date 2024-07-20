@@ -9,6 +9,9 @@ def extract_text_from_url(url):
     return soup.get_text()
 
 def parse_text(text):
+    lines = text.splitlines()
+    first_non_empty_line = next((line.strip() for line in lines if line.strip()), "N/A")
+    
     data = {}
     schema = [
         "Company Name:",
@@ -26,8 +29,11 @@ def parse_text(text):
         "Rawmaterial:"
     ]
     
-    for field in schema:
-        pattern = re.compile(f"{field}\s*(.*)")
+    # Set the first non-empty line as the company name
+    data["Company Name:"] = first_non_empty_line
+    
+    for field in schema[1:]:
+        pattern = re.compile(f"\\s*{re.escape(field)}\\s*(.*)")
         match = pattern.search(text)
         if match:
             data[field] = match.group(1).strip()
